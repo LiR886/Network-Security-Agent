@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: nsa
+      POSTGRES_USER: nsa
+      POSTGRES_PASSWORD: nsa
+    ports:
+       - "8080:8080"
+       - "5000:5000"
+    volumes:
+      - nsa_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nsa -d nsa"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      NSA_CONFIG: /app/config.yaml
+      DATABASE_URL: postgresql+asyncpg://nsa:nsa@db:5432/nsa
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  agent:
+    build: .
+    command: ["python", "-m", "src.agents.orchestrator"]
+    environment:
+      NSA_CONFIG: /app/config.yaml
+      DATABASE_URL: postgresql+asyncpg://nsa:nsa@db:5432/nsa
+      # Default safe behavior in containers:
+      # set capture.mode=scapy + CAP_NET_RAW if you really need real sniffing.
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  nsa_db:
+
+
+
+
+
+

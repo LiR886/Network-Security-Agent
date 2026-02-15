@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Network Security Agent — Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="header">
+        <div>
+          <h1>Network Security Agent</h1>
+          <p class="muted">Live incidents (polling)</p>
+        </div>
+        <div class="controls">
+          <input id="apiKey" type="password" placeholder="X-API-Key" />
+          <button id="refresh">Refresh</button>
+        </div>
+      </header>
+
+      <section class="card">
+        <div class="row">
+          <div class="stat">
+            <div class="label">Incidents</div>
+            <div class="value" id="count">0</div>
+          </div>
+          <div class="stat">
+            <div class="label">Last update</div>
+            <div class="value" id="lastUpdate">—</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Time</th>
+              <th>Risk</th>
+              <th>Max score</th>
+              <th>Summary</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </section>
+
+      <section class="card" id="detailsCard" style="display:none">
+        <h2 class="details-title">Incident <span id="detailsId"></span></h2>
+        <div class="details-body">
+          <div class="details-main">
+            <div><span class="label">Status:</span> <span id="detailsStatus"></span></div>
+            <div><span class="label">Risk level:</span> <span id="detailsRisk"></span></div>
+            <div><span class="label">Max score:</span> <span id="detailsScore"></span></div>
+            <div><span class="label">Created:</span> <span id="detailsCreated"></span></div>
+          </div>
+          <div class="details-remediation">
+            <div class="label">Recommended action</div>
+            <div id="detailsRemediation" class="muted"></div>
+          </div>
+          <div class="details-actions">
+            <div class="label">Planned / executed actions</div>
+            <ul id="detailsActions"></ul>
+          </div>
+        </div>
+      </section>
+
+      <footer class="muted small">
+        Tip: set API key in <code>config.yaml</code> and paste into the field above.
+      </footer>
+    </main>
+
+    <script>
+      const rows = document.getElementById("rows");
+      const count = document.getElementById("count");
+      const lastUpdate = document.getElementById("lastUpdate");
+      const apiKey = document.getElementById("apiKey");
+      const refreshBtn = document.getElementById("refresh");
+      const detailsCard = document.getElementById("detailsCard");
+      const detailsId = document.getElementById("detailsId");
+      const detailsStatus = document.getElementById("detailsStatus");
+      const detailsRisk = document.getElementById("detailsRisk");
+      const detailsScore = document.getElementById("detailsScore");
+      const detailsCreated = document.getElementById("detailsCreated");
+      const detailsRemediation = document.getElementById("detailsRemediation");
+      const detailsActions = document.getElementById("detailsActions");
+
+      function esc(s) {
+        return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      }
+
+      async function loadIncidents() {
+        rows.innerHTML = "";
+        const k = apiKey.value || "";
+        const res = await fetch("/incidents?limit=50", { headers: { "X-API-Key": k } });
+        if (!res.ok) {
+          rows.innerHTML = `<tr><td colspan="5">Error: ${esc(res.status)} ${esc(await res.text())}</td></tr>`;
+          return;
+        }
+        const data = await res.json();
+        const items = data.items || [];
+        count.textContent = String(items.length);
+        lastUpdate.textContent = new Date().toLocaleTimeString();
+        for (const it of items) {
+          const tr = document.createElement("tr");
+          tr.classList.add("clickable-row");
+          tr.addEventListener("click", () => loadIncidentDetails(it.id));
+          tr.innerHTML = `
+            <td>${esc(it.id)}</td>
+            <td class="muted">${esc(it.created_at)}</td>
+            <td><span class="pill ${esc(it.risk_level)}">${esc(it.risk_level)}</span></td>
+            <td>${esc(it.max_score)}</td>
+            <td class="muted">${esc(it.summary || "")}</td>
+          `;
+          rows.appendChild(tr);
+        }
+        if (items.length === 0) {
+          rows.innerHTML = `<tr><td colspan="5" class="muted">No incidents yet</td></tr>`;
+        }
+      }
+
+      async function loadIncidentDetails(id) {
+        const k = apiKey.value || "";
+        const res = await fetch(`/incidents/${id}`, { headers: { "X-API-Key": k } });
+        if (!res.ok) {
+          detailsCard.style.display = "block";
+          detailsId.textContent = id;
+          detailsStatus.textContent = "error";
+          detailsRisk.textContent = "-";
+          detailsScore.textContent = "-";
+          detailsCreated.textContent = "";
+          detailsRemediation.textContent = `Failed to load incident: ${res.status}`;
+          detailsActions.innerHTML = "";
+          return;
+        }
+        const it = await res.json();
+        detailsCard.style.display = "block";
+        detailsId.textContent = esc(it.id);
+        detailsStatus.textContent = esc(it.report?.status || "-");
+        detailsRisk.textContent = esc(it.risk_level || "-");
+        detailsScore.textContent = esc(it.max_score ?? "-");
+        detailsCreated.textContent = esc(it.created_at || "");
+        detailsRemediation.textContent = esc(it.report?.remediation_hint || "No remediation hint.");
+        detailsActions.innerHTML = "";
+        const acts = (it.actions && it.actions.length ? it.actions : (it.report?.actions || []));
+        if (!acts || acts.length === 0) {
+          const li = document.createElement("li");
+          li.classList.add("muted");
+          li.textContent = "No actions recorded.";
+          detailsActions.appendChild(li);
+        } else {
+          for (const a of acts) {
+            const li = document.createElement("li");
+            const ip = a.ip ? ` ip=${esc(a.ip)}` : "";
+            const reason = a.reason ? ` (${esc(a.reason)})` : "";
+            li.textContent = `${esc(a.type || "action")}${ip}${reason}`;
+            detailsActions.appendChild(li);
+          }
+        }
+      }
+
+      refreshBtn.addEventListener("click", loadIncidents);
+      setInterval(loadIncidents, 5000);
+      loadIncidents();
+    </script>
+  </body>
+</html>
+
+

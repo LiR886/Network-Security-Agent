@@ -1,0 +1,66 @@
+app:
+  env: "prod"
+  log_level: "INFO"
+  api_key: "vibeke"   # Simple shared secret for SIEM integration endpoints
+
+capture:
+  mode: "auto"           # auto|scapy|pcap_file|mock
+  interface: "eth0"
+  bpf_filter: "ip"
+  pcap_file: ""
+  batch_size: 50
+  batch_timeout_s: 1.0
+
+ml:
+  anomaly:
+    enabled: true
+    contamination: 0.02
+    model_path: "data/models/anomaly_detector.joblib"
+    retrain_min_feedback: 50
+
+threat_intel:
+  local_db_path: "data/threat_intel.json"
+  external_feeds:
+    - name: "abuseipdb-like-demo"
+      url: "https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
+      type: "ip_list"
+      refresh_minutes: 360
+  cache_ttl_minutes: 360
+
+decision:
+  severity_thresholds:
+    high: 0.85
+    medium: 0.60
+
+response:
+  enabled: true
+  dry_run: true          # true = no real firewall changes; logs actions instead
+  actions:
+    - type: "block_ip"
+      duration_minutes: 60
+    - type: "isolate_host"
+      duration_minutes: 15
+
+storage:
+  url: "sqlite+aiosqlite:///./data/security.db"   # override with env DATABASE_URL for Postgres
+
+alerts:
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+  slack:
+    enabled: false
+    webhook_url: ""
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    username: ""
+    password: ""
+    to: ""
+
+
+
+
+
